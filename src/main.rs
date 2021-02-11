@@ -39,7 +39,7 @@ impl<T> Container<T> for Node4<T> {
         &Node::None
     }
     fn get_value(&self) -> Option<&T> {
-        panic!()
+        todo!()
     }
 }
 
@@ -72,12 +72,12 @@ impl<T: 'static> Tree<T> {
         let mut n = &self.root;
         let mut k = key;
         loop {
-            match n {
+            n = match n {
                 Node::Leaf(t) => {
                     if k.len() == 0 {
                         return Some(&t);
                     } else {
-                        None
+                        return None;
                     }
                 }
                 Node::Container(c) => {
