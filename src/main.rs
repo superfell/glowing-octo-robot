@@ -1,3 +1,7 @@
+use std::usize;
+
+use arr_macro::arr;
+
 fn main() {
     println!("Hello, world!");
     let mut x = Tree::<String>::new();
@@ -25,12 +29,19 @@ fn main() {
     }
 }
 
+enum ChildSlot<'a, T: 'a> {
+    Slot(&'a mut Node<T>),
+    NoSpace,
+}
+
 trait Container<T: Sized> {
     fn get_value(&self) -> Option<&T>;
+    fn get_value_node(&mut self) -> &mut Option<Node<T>>;
     fn get_child(&self, key: u8) -> &Node<T>;
+    fn get_keys(&self) -> Vec<u8>;
 
     fn set_value(&mut self, v: Node<T>);
-    fn get_child_slot(&mut self, key: u8) -> &mut Node<T>;
+    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T>;
 }
 
 enum Node<T: Sized> {
@@ -64,6 +75,12 @@ impl<T: Sized> Container4<T> {
 }
 
 impl<T: Sized> Container<T> for Container4<T> {
+    fn get_keys(&self) -> Vec<u8> {
+        self.keys[0..self.count].to_vec()
+    }
+    fn get_value_node(&mut self) -> &mut Option<Node<T>> {
+        return &mut self.value;
+    }
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
@@ -72,16 +89,19 @@ impl<T: Sized> Container<T> for Container4<T> {
         }
         &Node::None
     }
-    fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
+    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
-                return &mut self.children[i];
+                return ChildSlot::Slot(&mut self.children[i]);
             }
+        }
+        if self.count >= 4 {
+            return ChildSlot::NoSpace;
         }
         let idx = self.count;
         self.keys[idx] = key;
         self.count += 1;
-        return &mut self.children[idx];
+        return ChildSlot::Slot(&mut self.children[idx]);
     }
 
     fn get_value(&self) -> Option<&T> {
@@ -96,6 +116,73 @@ impl<T: Sized> Container<T> for Container4<T> {
 
     fn set_value(&mut self, v: Node<T>) {
         self.value = Some(v);
+    }
+}
+
+struct Container256<T> {
+    children: [Node<T>; 256],
+    value: Option<Node<T>>,
+}
+
+impl<T: Sized> Container256<T> {
+    fn new(srcn: &Node<T>) -> Container256<T> {
+        let c = arr![Node::None; 256];
+        let mut n = Container256 {
+            children: c,
+            value: None,
+        };
+        if let Node::Container(src) = srcn {
+            src.get_keys().into_iter().for_each(|k| {
+                let slot = src.get_child_slot(k);
+                let dest = &mut n.children[k as usize];
+                match slot {
+                    ChildSlot::Slot(srcn) => {
+                        std::mem::swap(dest, srcn);
+                    }
+                    ChildSlot::NoSpace => {
+                        panic!("get_child_slot with a known existing key shouldn't return NoSpace")
+                    }
+                }
+            });
+            std::mem::swap(&mut n.value, src.get_value_node());
+            return n;
+        }
+        panic!();
+    }
+}
+
+impl<T: Sized> Container<T> for Container256<T> {
+    fn get_value(&self) -> Option<&T> {
+        match &self.value {
+            Some(n) => match n {
+                Node::Leaf(v) => Some(v),
+                _ => panic!("A Nodes value should always be a Leaf"),
+            },
+            None => None,
+        }
+    }
+    fn get_value_node(&mut self) -> &mut Option<Node<T>> {
+        return &mut self.value;
+    }
+    fn get_keys(&self) -> Vec<u8> {
+        self.children
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| if let Node::None = n { false } else { true })
+            .map(|(i, _)| i as u8)
+            .collect()
+    }
+
+    fn get_child(&self, key: u8) -> &Node<T> {
+        &self.children[key as usize]
+    }
+
+    fn set_value(&mut self, v: Node<T>) {
+        self.value = Some(v);
+    }
+
+    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T> {
+        ChildSlot::Slot(&mut self.children[key as usize])
     }
 }
 
@@ -121,10 +208,18 @@ impl<T: Sized + 'static> Tree<T> {
                     c.set_value(std::mem::take(n));
                     *n = Node::Container(c);
                 }
-                Node::Container(c) => {
-                    n = c.get_child_slot(k[0]);
-                    k = &k[1..];
-                }
+                Node::Container(c) => match c.get_child_slot(k[0]) {
+                    ChildSlot::Slot(s) => {
+                        n = s;
+                        k = &k[1..]
+                    }
+                    ChildSlot::NoSpace => {
+                        let taken_n = std::mem::take(n);
+                        if let Node::Container(nc) = taken_n {
+                            *n = Node::Container(Box::new(Container256::new(&taken_n)))
+                        }
+                    }
+                },
             }
         }
         match n {
