@@ -1,11 +1,12 @@
 fn main() {
     println!("Hello, world!");
-    let mut x = Tree::<Box<&str>>::new();
+    let mut x = Tree::<String>::new();
     {
-        x.put(&[1, 2, 3], Box::new("bob"));
+        x.put(&[1, 2, 3], String::from("bob"));
     }
-    x.put(&[2, 10, 11], Box::new("eve"));
-    x.put(&[1, 2], Box::new("alice"));
+    x.put(&[2, 10, 11], String::from("eve"));
+    x.put(&[1, 2], String::from("alice"));
+
     match x.get(&[1, 2, 3]) {
         Some(s) => println!("{}", s),
         None => println!("what the hell"),
