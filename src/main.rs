@@ -131,12 +131,9 @@ impl<T: Sized + 'static> Tree<T> {
                     *n = Node::Container(Box::new(Container4::new()));
                 }
                 Node::Leaf(_) => {
-                    let c = &mut Node::Container(Box::new(Container4::<T>::new()));
-                    std::mem::swap(n, c);
-                    // n is now the container, and c the leaf
-                    if let Node::Container(xxx) = n {
-                        xxx.set_value(std::mem::take(c));
-                    }
+                    let mut c = Box::new(Container4::<T>::new());
+                    c.set_value(std::mem::take(n));
+                    *n = Node::Container(c);
                 }
                 Node::Container(c) => {
                     n = c.get_child_slot(k[0]);
