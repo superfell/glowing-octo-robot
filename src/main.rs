@@ -3,7 +3,10 @@ fn main() {
     let mut x = Tree::<Box<&str>>::new();
     {
         x.put(&[1, 2, 3], Box::new("bob"));
-        println!("{}", x.get(&[1, 2, 3]).unwrap());
+        match x.get(&[1, 2, 3]) {
+            Some(s) => println!("{}", s),
+            None => println!("what the hell"),
+        }
     }
 }
 
@@ -13,8 +16,7 @@ trait Container<T: Sized + Clone> {
 
     fn set_value(&mut self, value: T);
     fn set_child(&mut self, key: u8, child: Node<T>);
-    fn get_child_slot(&mut self, key: u8) -> (&Node<T>, usize);
-    fn set_child_slot(&mut self, child: Node<T>, slot: usize);
+    fn get_child_slot(&mut self, key: u8) -> &mut Node<T>;
 }
 
 enum Node<T: Sized + Clone> {
@@ -48,21 +50,16 @@ impl<T: Sized + Clone> Container<T> for Node4<T> {
         }
         &Node::None
     }
-    fn get_child_slot(&mut self, key: u8) -> (&Node<T>, usize) {
+    fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
-                return (&self.values[i], i);
+                return &mut self.values[i];
             }
         }
         let idx = self.count;
         self.keys[idx] = key;
-        let next = &self.values[idx];
         self.count += 1;
-        return (next, idx);
-    }
-
-    fn set_child_slot(&mut self, child: Node<T>, slot: usize) {
-        self.values[slot] = child;
+        return &mut self.values[idx];
     }
 
     fn set_child(&mut self, key: u8, child: Node<T>) {
@@ -87,9 +84,38 @@ impl<T: Sized + Clone + 'static> Tree<T> {
     }
 
     fn put(&mut self, key: &[u8], value: T) {
-        let mut r = Node::<T>::None;
-        std::mem::swap(&mut r, &mut self.root);
-        self.root = put_next(&mut r, key, value);
+        let mut n = &mut self.root;
+        let mut k = key;
+        loop {
+            if k.len() == 0 {
+                match n {
+                    Node::None => {
+                        *n = Node::Leaf(value);
+                    }
+                    Node::Leaf(v) => {
+                        *v = value;
+                    }
+                    Node::Container(c) => {
+                        c.set_value(value);
+                    }
+                }
+                return;
+            }
+            match n {
+                Node::None => {
+                    *n = Node::Container(Box::new(Node4::new()));
+                }
+                Node::Leaf(v) => {
+                    let mut c = Box::new(Node4::<T>::new());
+                    //c.set_value(v);
+                    *n = Node::Container(c);
+                }
+                Node::Container(c) => {
+                    n = c.get_child_slot(k[0]);
+                    k = &k[1..];
+                }
+            }
+        }
     }
 
     fn get(&self, key: &[u8]) -> Option<&T> {
@@ -108,7 +134,7 @@ impl<T: Sized + Clone + 'static> Tree<T> {
                     if k.len() == 0 {
                         return c.get_value();
                     }
-                    let nc = c.get_child(key[0]);
+                    let nc = c.get_child(k[0]);
                     k = &k[1..];
                     &nc
                 }
@@ -116,30 +142,4 @@ impl<T: Sized + Clone + 'static> Tree<T> {
             };
         }
     }
-}
-
-fn put_next<T: Sized + Clone + 'static>(n: &mut Node<T>, key: &[u8], value: T) -> Node<T> {
-    if key.len() == 0 {
-        return match n {
-            Node::None => Node::Leaf(value),
-            Node::Container(c) => {
-                c.set_value(value);
-                n
-            }
-            Node::Leaf(_) => Node::Leaf(value),
-        };
-    }
-    let mut nc: Box<dyn Container<T>> = match n {
-        Node::None => Box::new(Node4::new()),
-        Node::Container(mut c) => c,
-        Node::Leaf(v) => {
-            let mut b: Box<dyn Container<T>> = Box::new(Node4::new());
-            b.set_value(v.clone());
-            b
-        }
-    };
-    let (child, slot) = nc.get_child_slot(key[0]);
-    let newChild = put_next(&mut child, &key[1..], value);
-    nc.set_child_slot(newChild, slot);
-    return Node::Container(nc);
 }
