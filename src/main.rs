@@ -1,11 +1,11 @@
 fn main() {
     println!("Hello, world!");
     let mut x = Tree::<String>::new();
+    x.put(&[1, 2], String::from("alice"));
     {
         x.put(&[1, 2, 3], String::from("bob"));
     }
     x.put(&[2, 10, 11], String::from("eve"));
-    x.put(&[1, 2], String::from("alice"));
 
     match x.get(&[1, 2, 3]) {
         Some(s) => println!("{}", s),
@@ -111,21 +111,7 @@ impl<T: Sized + 'static> Tree<T> {
     fn put(&mut self, key: &[u8], value: T) {
         let mut n = &mut self.root;
         let mut k = key;
-        loop {
-            if k.len() == 0 {
-                match n {
-                    Node::None => {
-                        *n = Node::Leaf(value);
-                    }
-                    Node::Leaf(v) => {
-                        *v = value;
-                    }
-                    Node::Container(c) => {
-                        c.set_value(Node::Leaf(value));
-                    }
-                }
-                return;
-            }
+        while k.len() > 0 {
             match n {
                 Node::None => {
                     *n = Node::Container(Box::new(Container4::new()));
@@ -139,6 +125,17 @@ impl<T: Sized + 'static> Tree<T> {
                     n = c.get_child_slot(k[0]);
                     k = &k[1..];
                 }
+            }
+        }
+        match n {
+            Node::None => {
+                *n = Node::Leaf(value);
+            }
+            Node::Leaf(v) => {
+                *v = value;
+            }
+            Node::Container(c) => {
+                c.set_value(Node::Leaf(value));
             }
         }
     }
