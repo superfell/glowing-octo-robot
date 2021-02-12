@@ -24,7 +24,7 @@ fn main() {
     }
 }
 
-trait Container<T: Sized + Clone> {
+trait Container<T: Sized> {
     fn get_value(&self) -> Option<&T>;
     fn get_child(&self, key: u8) -> &Node<T>;
 
@@ -32,37 +32,37 @@ trait Container<T: Sized + Clone> {
     fn get_child_slot(&mut self, key: u8) -> &mut Node<T>;
 }
 
-enum Node<T: Sized + Clone> {
+enum Node<T: Sized> {
     None,
     Leaf(T),
     Container(Box<dyn Container<T>>),
 }
 
-impl<T: Sized + Clone> Default for Node<T> {
+impl<T: Sized> Default for Node<T> {
     fn default() -> Self {
         Node::None
     }
 }
 
-struct Container4<T: Sized + Clone> {
+struct Container4<T: Sized> {
     children: [Node<T>; 4],
     value: Option<Node<T>>,
     count: usize,
     keys: [u8; 4],
 }
 
-impl<T: Sized + Clone> Container4<T> {
+impl<T: Sized> Container4<T> {
     fn new() -> Container4<T> {
         Container4::<T> {
             children: [Node::None, Node::None, Node::None, Node::None],
             value: None,
             count: 0,
-            keys: [0, 0, 0, 0],
+            keys: [0; 4],
         }
     }
 }
 
-impl<T: Sized + Clone> Container<T> for Container4<T> {
+impl<T: Sized> Container<T> for Container4<T> {
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
@@ -98,11 +98,11 @@ impl<T: Sized + Clone> Container<T> for Container4<T> {
     }
 }
 
-pub struct Tree<T: Sized + Clone> {
+pub struct Tree<T: Sized> {
     root: Node<T>,
 }
 
-impl<T: Sized + Clone + 'static> Tree<T> {
+impl<T: Sized + 'static> Tree<T> {
     fn new() -> Self {
         Self { root: Node::None }
     }
