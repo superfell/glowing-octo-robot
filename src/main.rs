@@ -3,9 +3,14 @@ fn main() {
     let mut x = Tree::<Box<&str>>::new();
     {
         x.put(&[1, 2, 3], Box::new("bob"));
+        x.put(&[2, 10, 11], Box::new("eve"));
         match x.get(&[1, 2, 3]) {
             Some(s) => println!("{}", s),
             None => println!("what the hell"),
+        }
+        match x.get(&[2, 10, 11]) {
+            Some(s) => println!("{}", s),
+            None => println!("what the hell 2"),
         }
     }
 }
@@ -14,8 +19,7 @@ trait Container<T: Sized + Clone> {
     fn get_value(&self) -> Option<&T>;
     fn get_child(&self, key: u8) -> &Node<T>;
 
-    fn set_value(&mut self, value: T);
-    fn set_child(&mut self, key: u8, child: Node<T>);
+    fn set_value(&mut self, v: T);
     fn get_child_slot(&mut self, key: u8) -> &mut Node<T>;
 }
 
@@ -25,15 +29,15 @@ enum Node<T: Sized + Clone> {
     Container(Box<dyn Container<T>>),
 }
 
-struct Node4<T: Sized + Clone> {
+struct Container4<T: Sized + Clone> {
     values: [Node<T>; 4],
     count: usize,
     keys: [u8; 4],
 }
 
-impl<T: Sized + Clone> Node4<T> {
-    fn new() -> Node4<T> {
-        Node4::<T> {
+impl<T: Sized + Clone> Container4<T> {
+    fn new() -> Container4<T> {
+        Container4::<T> {
             values: [Node::None, Node::None, Node::None, Node::None],
             count: 0,
             keys: [0, 0, 0, 0],
@@ -41,7 +45,7 @@ impl<T: Sized + Clone> Node4<T> {
     }
 }
 
-impl<T: Sized + Clone> Container<T> for Node4<T> {
+impl<T: Sized + Clone> Container<T> for Container4<T> {
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
@@ -62,16 +66,12 @@ impl<T: Sized + Clone> Container<T> for Node4<T> {
         return &mut self.values[idx];
     }
 
-    fn set_child(&mut self, key: u8, child: Node<T>) {
-        self.keys[self.count] = key;
-        self.values[self.count] = child;
-        self.count += 1;
-    }
-
     fn get_value(&self) -> Option<&T> {
         todo!()
     }
-    fn set_value(&mut self, _child: T) {}
+    fn set_value(&mut self, _child: T) {
+        todo!()
+    }
 }
 
 pub struct Tree<T: Sized + Clone> {
@@ -103,11 +103,12 @@ impl<T: Sized + Clone + 'static> Tree<T> {
             }
             match n {
                 Node::None => {
-                    *n = Node::Container(Box::new(Node4::new()));
+                    *n = Node::Container(Box::new(Container4::new()));
                 }
-                Node::Leaf(v) => {
-                    let mut c = Box::new(Node4::<T>::new());
-                    //c.set_value(v);
+                Node::Leaf(_) => {
+                    let c = Box::new(Container4::<T>::new());
+                    // TODO how do we move this leaf into the new container?
+                    // c.set_value(n);
                     *n = Node::Container(c);
                 }
                 Node::Container(c) => {
@@ -122,10 +123,10 @@ impl<T: Sized + Clone + 'static> Tree<T> {
         let mut n = &self.root;
         let mut k = key;
         loop {
-            n = match n {
+            match n {
                 Node::Leaf(t) => {
                     if k.len() == 0 {
-                        return Some(&t);
+                        return Some(t);
                     } else {
                         return None;
                     }
@@ -134,9 +135,8 @@ impl<T: Sized + Clone + 'static> Tree<T> {
                     if k.len() == 0 {
                         return c.get_value();
                     }
-                    let nc = c.get_child(k[0]);
+                    n = c.get_child(k[0]);
                     k = &k[1..];
-                    &nc
                 }
                 Node::None => return None,
             };
