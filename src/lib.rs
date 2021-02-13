@@ -1,7 +1,7 @@
 use arr_macro::arr;
 use std::usize;
 
-trait Container<T: Clone> {
+trait Container<T> {
     fn get_value(&self) -> Option<&T>;
     fn get_value_slot(&mut self) -> &mut Option<Node<T>>;
     fn set_value(&mut self, v: Node<T>);
@@ -13,26 +13,26 @@ trait Container<T: Clone> {
     fn should_grow(&self, key: u8) -> bool;
 }
 
-enum Node<T: Clone> {
+enum Node<T> {
     None,
     Leaf(T),
     Container(Box<dyn Container<T>>),
 }
 
-impl<T: Clone> Default for Node<T> {
+impl<T> Default for Node<T> {
     fn default() -> Self {
         Node::None
     }
 }
 
-struct Container4<T: Clone> {
+struct Container4<T> {
     children: [Node<T>; 4],
     value: Option<Node<T>>,
     count: usize,
     keys: [u8; 4],
 }
 
-impl<T: Clone> Container4<T> {
+impl<T> Container4<T> {
     fn new() -> Self {
         Container4::<T> {
             children: [Node::None, Node::None, Node::None, Node::None],
@@ -43,7 +43,7 @@ impl<T: Clone> Container4<T> {
     }
 }
 
-impl<T: Clone> Container<T> for Container4<T> {
+impl<T> Container<T> for Container4<T> {
     fn get_keys(&self) -> Vec<u8> {
         self.keys[0..self.count].to_vec()
     }
@@ -97,12 +97,12 @@ impl<T: Clone> Container<T> for Container4<T> {
     }
 }
 
-struct Container256<T: Clone> {
+struct Container256<T> {
     children: [Node<T>; 256],
     value: Option<Node<T>>,
 }
 
-impl<T: Clone> Container256<T> {
+impl<T> Container256<T> {
     fn new(srcn: &mut Node<T>) -> Container256<T> {
         let mut n = Container256 {
             children: arr![Node::None; 256],
@@ -121,7 +121,7 @@ impl<T: Clone> Container256<T> {
     }
 }
 
-impl<T: Clone> Container<T> for Container256<T> {
+impl<T> Container<T> for Container256<T> {
     fn get_value(&self) -> Option<&T> {
         match &self.value {
             Some(n) => match n {
@@ -158,11 +158,11 @@ impl<T: Clone> Container<T> for Container256<T> {
     }
 }
 
-pub struct Tree<T: Clone> {
+pub struct Tree<T> {
     root: Node<T>,
 }
 
-impl<T: Clone + 'static> Tree<T> {
+impl<T: 'static> Tree<T> {
     pub fn new() -> Self {
         Self { root: Node::None }
     }
