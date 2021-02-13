@@ -26,10 +26,10 @@ impl<T> Default for Node<T> {
 }
 
 struct Container4<T> {
-    children: [Node<T>; 4],
-    value: Option<Node<T>>,
-    count: usize,
     keys: [u8; 4],
+    children: [Node<T>; 4],
+    count: usize,
+    value: Option<Node<T>>,
 }
 
 impl<T> Container4<T> {
@@ -53,9 +53,10 @@ impl<T> Container<T> for Container4<T> {
         }
         let c = self.get_child(key);
         if let Node::None = c {
-            return self.count >= 4;
+            true
+        } else {
+            false
         }
-        false
     }
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
@@ -170,8 +171,7 @@ impl<T: 'static> Tree<T> {
         while k.len() > 0 {
             if let Node::Container(c) = n {
                 if c.should_grow(k[0]) {
-                    let newc = Box::new(Container256::<T>::new(c));
-                    *n = Node::Container(newc);
+                    *n = Node::Container(Box::new(Container256::new(c)));
                 }
             }
             match n {
@@ -179,7 +179,7 @@ impl<T: 'static> Tree<T> {
                     *n = Node::Container(Box::new(Container4::new()));
                 }
                 Node::Leaf(_) => {
-                    let mut c = Box::new(Container4::<T>::new());
+                    let mut c = Box::new(Container4::new());
                     c.set_value(std::mem::take(n));
                     *n = Node::Container(c);
                 }
