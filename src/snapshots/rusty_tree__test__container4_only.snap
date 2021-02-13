@@ -4,8 +4,8 @@ expression: x
 
 ---
 <c4> : 
-  [1]: <path> [2] : <c4> : <leaf> "alice"
+  [1]: <path> [2] : <c4> : <value> "alice"
                       [3]: <leaf> "bob"
-  [2]: <path> [10, 11] : <c4> : <leaf> "jim"
+  [2]: <path> [10, 11] : <c4> : <value> "jim"
                            [12]: <path> [13, 14] : <leaf> "eve"
 

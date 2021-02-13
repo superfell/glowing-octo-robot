@@ -3,7 +3,7 @@ source: src/lib.rs
 expression: x
 
 ---
-<path> [1, 2, 3] : <c256> : <leaf> 255
+<path> [1, 2, 3] : <c256> : <value> 255
                         [10]: <leaf> 10
                         [11]: <leaf> 11
                         [12]: <leaf> 12

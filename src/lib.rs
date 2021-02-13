@@ -4,20 +4,10 @@ use std::fmt;
 
 enum Node<T> {
     None,
-    Leaf(T),
+    Leaf(Option<T>),
     Path(Box<Path<T>>),
     Container4(Box<Container4<T>>),
     Container256(Box<Container256<T>>),
-}
-
-impl<T> Node<T> {
-    fn leaf_value(&self) -> Option<&T> {
-        match &self {
-            Node::Leaf(v) => Some(v),
-            Node::None => None,
-            _ => panic!("A nodes value should always be a Leaf"),
-        }
-    }
 }
 
 impl<T> Default for Node<T> {
@@ -38,7 +28,7 @@ fn wrap_path_in_container<T>(n: &mut Node<T>) -> Box<Container4<T>> {
             keys: [p.key.remove(0), 0, 0, 0],
             children: [Node::None, Node::None, Node::None, Node::None],
             count: 1,
-            value: Node::None,
+            value: None,
         });
         // path.key might be empty now, in which case we can put the path child directly
         // into the new container rather than the remaining path
@@ -85,16 +75,16 @@ struct Container4<T> {
     keys: [u8; 4],
     children: [Node<T>; 4],
     count: usize,
-    value: Node<T>,
+    value: Option<T>,
 }
 
 impl<T> Container4<T> {
     fn new() -> Self {
         Container4::<T> {
-            children: [Node::None, Node::None, Node::None, Node::None],
-            value: Node::None,
-            count: 0,
             keys: [0; 4],
+            children: [Node::None, Node::None, Node::None, Node::None],
+            count: 0,
+            value: None,
         }
     }
     fn should_grow(&self, key: u8) -> bool {
@@ -127,14 +117,14 @@ impl<T> Container4<T> {
 
 struct Container256<T> {
     children: [Node<T>; 256],
-    value: Node<T>,
+    value: Option<T>,
 }
 
 impl<T> Container256<T> {
     fn new(src: &mut Box<Container4<T>>) -> Container256<T> {
         let mut n = Container256 {
             children: arr![Node::None; 256],
-            value: Node::None,
+            value: None,
         };
         std::mem::swap(&mut src.value, &mut n.value);
         for i in 0..src.count {
@@ -187,7 +177,7 @@ impl<T: 'static> Tree<T> {
                     // a path + leaf to handle the remaining key
                     *n = Node::Path(Box::new(Path {
                         key: k.to_vec(),
-                        child: Node::Leaf(value),
+                        child: Node::Leaf(Some(value)),
                     }));
                     return;
                 }
@@ -197,9 +187,9 @@ impl<T: 'static> Tree<T> {
                     n = &mut p.child;
                     k = &k[p.key.len()..];
                 }
-                Node::Leaf(_) => {
+                Node::Leaf(v) => {
                     let mut c = Box::new(Container4::new());
-                    c.value = std::mem::take(n);
+                    std::mem::swap(v, &mut c.value);
                     *n = Node::Container4(c);
                 }
                 Node::Container4(c) => {
@@ -214,21 +204,21 @@ impl<T: 'static> Tree<T> {
         }
         match n {
             Node::None => {
-                *n = Node::Leaf(value);
+                *n = Node::Leaf(Some(value));
             }
             Node::Leaf(v) => {
-                *v = value;
+                *v = Some(value);
             }
             Node::Path(_) => {
                 let mut c = wrap_path_in_container(n);
-                c.value = Node::Leaf(value);
+                c.value = Some(value);
                 *n = Node::Container4(c);
             }
             Node::Container4(c) => {
-                c.value = Node::Leaf(value);
+                c.value = Some(value);
             }
             Node::Container256(c) => {
-                c.value = Node::Leaf(value);
+                c.value = Some(value);
             }
         }
     }
@@ -240,7 +230,7 @@ impl<T: 'static> Tree<T> {
             match n {
                 Node::Leaf(t) => {
                     if k.is_empty() {
-                        return Some(t);
+                        return t.as_ref();
                     } else {
                         return None;
                     }
@@ -257,14 +247,14 @@ impl<T: 'static> Tree<T> {
                 }
                 Node::Container4(c) => {
                     if k.is_empty() {
-                        return c.value.leaf_value();
+                        return c.value.as_ref();
                     }
                     n = c.get_child(k[0]);
                     k = &k[1..];
                 }
                 Node::Container256(c) => {
                     if k.is_empty() {
-                        return c.value.leaf_value();
+                        return c.value.as_ref();
                     }
                     n = &c.children[k[0] as usize];
                     k = &k[1..];
@@ -284,9 +274,10 @@ fn write_node<T: std::fmt::Debug, W: fmt::Write>(
         Node::None => {
             // nothing
         }
-        Node::Leaf(t) => {
-            write!(f, "<leaf> {:?}\n", t)?;
-        }
+        Node::Leaf(t) => match &t {
+            Some(v) => writeln!(f, "<leaf> {:?}", v)?,
+            None => panic!("Leaf should never have a None value"),
+        },
         Node::Path(p) => {
             let path = format!("<path> {:?} : ", p.key);
             f.write_str(&path)?;
@@ -294,10 +285,9 @@ fn write_node<T: std::fmt::Debug, W: fmt::Write>(
         }
         Node::Container4(c) => {
             write!(f, "<c4> : ")?;
-            if let Node::None = c.value {
-                f.write_char('\n')?;
-            } else {
-                write_node(f, &c.value, indent + 4)?;
+            match &c.value {
+                Some(v) => writeln!(f, "<value> {:?}", v)?,
+                None => f.write_char('\n')?,
             }
             let new_indent = indent + 2;
             for i in 0..c.count {
@@ -308,10 +298,9 @@ fn write_node<T: std::fmt::Debug, W: fmt::Write>(
         }
         Node::Container256(c) => {
             write!(f, "<c256> : ")?;
-            if let Node::None = c.value {
-                f.write_char('\n')?;
-            } else {
-                write_node(f, &c.value, indent + 4)?;
+            match &c.value {
+                Some(v) => writeln!(f, "<value> {:?}", v)?,
+                None => f.write_char('\n')?,
             }
             let new_indent = indent + 4;
             c.children
