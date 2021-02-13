@@ -103,21 +103,18 @@ struct Container256<T> {
 }
 
 impl<T> Container256<T> {
-    fn new(srcn: &mut Node<T>) -> Container256<T> {
+    fn new(src: &mut Box<dyn Container<T>>) -> Container256<T> {
         let mut n = Container256 {
             children: arr![Node::None; 256],
             value: None,
         };
-        if let Node::Container(src) = srcn {
-            src.get_keys().into_iter().for_each(|k| {
-                let x = src.get_child_slot(k);
-                let y = n.get_child_slot(k);
-                std::mem::swap(x, y);
-            });
-            std::mem::swap(src.get_value_slot(), n.get_value_slot());
-            return n;
-        }
-        panic!("Container256 should be new'd from an existing containers");
+        src.get_keys().into_iter().for_each(|k| {
+            let x = src.get_child_slot(k);
+            let y = n.get_child_slot(k);
+            std::mem::swap(x, y);
+        });
+        std::mem::swap(src.get_value_slot(), n.get_value_slot());
+        return n;
     }
 }
 
@@ -171,9 +168,9 @@ impl<T: 'static> Tree<T> {
         let mut n = &mut self.root;
         let mut k = key;
         while k.len() > 0 {
-            if let Node::Container(ref c) = n {
+            if let Node::Container(c) = n {
                 if c.should_grow(k[0]) {
-                    let newc = Box::new(Container256::<T>::new(n));
+                    let newc = Box::new(Container256::<T>::new(c));
                     *n = Node::Container(newc);
                 }
             }
