@@ -1,70 +1,39 @@
+use arr_macro::arr;
 use std::usize;
 
-use arr_macro::arr;
-
-fn main() {
-    println!("Hello, world!");
-    let mut x = Tree::<String>::new();
-    x.put(&[1, 2], String::from("alice"));
-    {
-        x.put(&[1, 2, 3], String::from("bob"));
-    }
-    x.put(&[2, 10, 11], String::from("eve"));
-
-    match x.get(&[1, 2, 3]) {
-        Some(s) => println!("{}", s),
-        None => println!("what the hell"),
-    }
-    match x.get(&[2, 10, 11]) {
-        Some(s) => println!("{}", s),
-        None => println!("what the hell 2"),
-    }
-    match x.get(&[1, 2]) {
-        Some(s) => println!("{}", s),
-        None => println!("what the hell 3"),
-    }
-    match x.get(&[1, 4]) {
-        Some(_) => println!("what the hell 4"),
-        None => println!("yay"),
-    }
-}
-
-enum ChildSlot<'a, T: 'a> {
-    Slot(&'a mut Node<T>),
-    NoSpace,
-}
-
-trait Container<T: Sized> {
+trait Container<T: Clone> {
     fn get_value(&self) -> Option<&T>;
-    fn get_value_node(&mut self) -> &mut Option<Node<T>>;
-    fn get_child(&self, key: u8) -> &Node<T>;
-    fn get_keys(&self) -> Vec<u8>;
-
+    fn get_value_slot(&mut self) -> &mut Option<Node<T>>;
     fn set_value(&mut self, v: Node<T>);
-    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T>;
+
+    fn get_keys(&self) -> Vec<u8>;
+    fn get_child(&self, key: u8) -> &Node<T>;
+    fn get_child_slot(&mut self, key: u8) -> &mut Node<T>;
+    // return true if the container needs to grow to store a child for key
+    fn should_grow(&self, key: u8) -> bool;
 }
 
-enum Node<T: Sized> {
+enum Node<T: Clone> {
     None,
     Leaf(T),
     Container(Box<dyn Container<T>>),
 }
 
-impl<T: Sized> Default for Node<T> {
+impl<T: Clone> Default for Node<T> {
     fn default() -> Self {
         Node::None
     }
 }
 
-struct Container4<T: Sized> {
+struct Container4<T: Clone> {
     children: [Node<T>; 4],
     value: Option<Node<T>>,
     count: usize,
     keys: [u8; 4],
 }
 
-impl<T: Sized> Container4<T> {
-    fn new() -> Container4<T> {
+impl<T: Clone> Container4<T> {
+    fn new() -> Self {
         Container4::<T> {
             children: [Node::None, Node::None, Node::None, Node::None],
             value: None,
@@ -74,12 +43,19 @@ impl<T: Sized> Container4<T> {
     }
 }
 
-impl<T: Sized> Container<T> for Container4<T> {
+impl<T: Clone> Container<T> for Container4<T> {
     fn get_keys(&self) -> Vec<u8> {
         self.keys[0..self.count].to_vec()
     }
-    fn get_value_node(&mut self) -> &mut Option<Node<T>> {
-        return &mut self.value;
+    fn should_grow(&self, key: u8) -> bool {
+        if self.count < 4 {
+            return false;
+        }
+        let c = self.get_child(key);
+        if let Node::None = c {
+            return self.count >= 4;
+        }
+        false
     }
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
@@ -89,19 +65,19 @@ impl<T: Sized> Container<T> for Container4<T> {
         }
         &Node::None
     }
-    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T> {
+    fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
-                return ChildSlot::Slot(&mut self.children[i]);
+                return &mut self.children[i];
             }
         }
         if self.count >= 4 {
-            return ChildSlot::NoSpace;
+            panic!("container should of been grown already");
         }
         let idx = self.count;
         self.keys[idx] = key;
         self.count += 1;
-        return ChildSlot::Slot(&mut self.children[idx]);
+        return &mut self.children[idx];
     }
 
     fn get_value(&self) -> Option<&T> {
@@ -113,45 +89,39 @@ impl<T: Sized> Container<T> for Container4<T> {
             None => None,
         }
     }
-
+    fn get_value_slot(&mut self) -> &mut Option<Node<T>> {
+        &mut self.value
+    }
     fn set_value(&mut self, v: Node<T>) {
         self.value = Some(v);
     }
 }
 
-struct Container256<T> {
+struct Container256<T: Clone> {
     children: [Node<T>; 256],
     value: Option<Node<T>>,
 }
 
-impl<T: Sized> Container256<T> {
-    fn new(srcn: &Node<T>) -> Container256<T> {
-        let c = arr![Node::None; 256];
+impl<T: Clone> Container256<T> {
+    fn new(srcn: &mut Node<T>) -> Container256<T> {
         let mut n = Container256 {
-            children: c,
+            children: arr![Node::None; 256],
             value: None,
         };
         if let Node::Container(src) = srcn {
             src.get_keys().into_iter().for_each(|k| {
-                let slot = src.get_child_slot(k);
-                let dest = &mut n.children[k as usize];
-                match slot {
-                    ChildSlot::Slot(srcn) => {
-                        std::mem::swap(dest, srcn);
-                    }
-                    ChildSlot::NoSpace => {
-                        panic!("get_child_slot with a known existing key shouldn't return NoSpace")
-                    }
-                }
+                let x = src.get_child_slot(k);
+                let y = n.get_child_slot(k);
+                std::mem::swap(x, y);
             });
-            std::mem::swap(&mut n.value, src.get_value_node());
+            std::mem::swap(src.get_value_slot(), n.get_value_slot());
             return n;
         }
-        panic!();
+        panic!("Container256 should be new'd from an existing containers");
     }
 }
 
-impl<T: Sized> Container<T> for Container256<T> {
+impl<T: Clone> Container<T> for Container256<T> {
     fn get_value(&self) -> Option<&T> {
         match &self.value {
             Some(n) => match n {
@@ -161,8 +131,8 @@ impl<T: Sized> Container<T> for Container256<T> {
             None => None,
         }
     }
-    fn get_value_node(&mut self) -> &mut Option<Node<T>> {
-        return &mut self.value;
+    fn should_grow(&self, _key: u8) -> bool {
+        false
     }
     fn get_keys(&self) -> Vec<u8> {
         self.children
@@ -180,25 +150,33 @@ impl<T: Sized> Container<T> for Container256<T> {
     fn set_value(&mut self, v: Node<T>) {
         self.value = Some(v);
     }
-
-    fn get_child_slot(&mut self, key: u8) -> ChildSlot<T> {
-        ChildSlot::Slot(&mut self.children[key as usize])
+    fn get_value_slot(&mut self) -> &mut Option<Node<T>> {
+        &mut self.value
+    }
+    fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
+        &mut self.children[key as usize]
     }
 }
 
-pub struct Tree<T: Sized> {
+pub struct Tree<T: Clone> {
     root: Node<T>,
 }
 
-impl<T: Sized + 'static> Tree<T> {
-    fn new() -> Self {
+impl<T: Clone + 'static> Tree<T> {
+    pub fn new() -> Self {
         Self { root: Node::None }
     }
 
-    fn put(&mut self, key: &[u8], value: T) {
+    pub fn put(&mut self, key: &[u8], value: T) {
         let mut n = &mut self.root;
         let mut k = key;
         while k.len() > 0 {
+            if let Node::Container(ref c) = n {
+                if c.should_grow(k[0]) {
+                    let newc = Box::new(Container256::<T>::new(n));
+                    *n = Node::Container(newc);
+                }
+            }
             match n {
                 Node::None => {
                     *n = Node::Container(Box::new(Container4::new()));
@@ -208,18 +186,10 @@ impl<T: Sized + 'static> Tree<T> {
                     c.set_value(std::mem::take(n));
                     *n = Node::Container(c);
                 }
-                Node::Container(c) => match c.get_child_slot(k[0]) {
-                    ChildSlot::Slot(s) => {
-                        n = s;
-                        k = &k[1..]
-                    }
-                    ChildSlot::NoSpace => {
-                        let taken_n = std::mem::take(n);
-                        if let Node::Container(nc) = taken_n {
-                            *n = Node::Container(Box::new(Container256::new(&taken_n)))
-                        }
-                    }
-                },
+                Node::Container(c) => {
+                    n = c.get_child_slot(k[0]);
+                    k = &k[1..]
+                }
             }
         }
         match n {
@@ -235,7 +205,7 @@ impl<T: Sized + 'static> Tree<T> {
         }
     }
 
-    fn get(&self, key: &[u8]) -> Option<&T> {
+    pub fn get(&self, key: &[u8]) -> Option<&T> {
         let mut n = &self.root;
         let mut k = key;
         loop {
@@ -256,6 +226,39 @@ impl<T: Sized + 'static> Tree<T> {
                 }
                 Node::None => return None,
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::Tree;
+
+    #[test]
+    fn container4_only() {
+        let mut x = Tree::<String>::new();
+        x.put(&[1, 2], String::from("alice"));
+        x.put(&[1, 2, 3], String::from("bob"));
+        x.put(&[2, 10, 11], String::from("eve"));
+
+        assert_eq!(x.get(&[1, 2]), Some(&String::from("alice")));
+        assert_eq!(x.get(&[1, 2, 3]), Some(&String::from("bob")));
+        assert_eq!(x.get(&[2, 10, 11]), Some(&String::from("eve")));
+
+        assert_eq!(x.get(&[5]), None);
+        assert_eq!(x.get(&[]), None);
+        assert_eq!(x.get(&[2, 10]), None);
+        assert_eq!(x.get(&[2, 10, 11, 12]), None);
+    }
+
+    #[test]
+    fn container4_grow_to_256() {
+        let mut x = Tree::<u8>::new();
+        for i in 10..50 {
+            x.put(&[1, 2, 3, i], i);
+        }
+        for i in 10..50 {
+            assert_eq!(x.get(&[1, 2, 3, i]), Some(&i));
         }
     }
 }
