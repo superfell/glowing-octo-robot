@@ -68,9 +68,7 @@ impl<T> Container<T> for Container4<T> {
                 return &mut self.children[i];
             }
         }
-        if self.count >= 4 {
-            panic!("container should of been grown already");
-        }
+        assert!(self.count < 4, "container should of been grown already");
         let idx = self.count;
         self.keys[idx] = key;
         self.count += 1;
