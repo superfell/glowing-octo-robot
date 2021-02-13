@@ -1,0 +1,47 @@
+---
+source: src/lib.rs
+expression: x
+
+---
+<path> [1, 2, 3] : <c256> : <leaf> 255
+                        [10]: <leaf> 10
+                        [11]: <leaf> 11
+                        [12]: <leaf> 12
+                        [13]: <leaf> 13
+                        [14]: <leaf> 14
+                        [15]: <leaf> 15
+                        [16]: <leaf> 16
+                        [17]: <leaf> 17
+                        [18]: <leaf> 18
+                        [19]: <leaf> 19
+                        [20]: <leaf> 20
+                        [21]: <leaf> 21
+                        [22]: <leaf> 22
+                        [23]: <leaf> 23
+                        [24]: <leaf> 24
+                        [25]: <leaf> 25
+                        [26]: <leaf> 26
+                        [27]: <leaf> 27
+                        [28]: <leaf> 28
+                        [29]: <leaf> 29
+                        [30]: <leaf> 30
+                        [31]: <leaf> 31
+                        [32]: <leaf> 32
+                        [33]: <leaf> 33
+                        [34]: <leaf> 34
+                        [35]: <leaf> 35
+                        [36]: <leaf> 36
+                        [37]: <leaf> 37
+                        [38]: <leaf> 38
+                        [39]: <leaf> 39
+                        [40]: <leaf> 40
+                        [41]: <leaf> 41
+                        [42]: <leaf> 42
+                        [43]: <leaf> 43
+                        [44]: <leaf> 44
+                        [45]: <leaf> 45
+                        [46]: <leaf> 46
+                        [47]: <leaf> 47
+                        [48]: <leaf> 48
+                        [49]: <leaf> 49
+

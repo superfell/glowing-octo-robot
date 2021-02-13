@@ -1,5 +1,6 @@
 use arr_macro::arr;
 use std::cmp::min;
+use std::fmt;
 
 enum Node<T> {
     None,
@@ -57,11 +58,11 @@ fn split_path_maybe<T>(n: &mut Node<T>, k: &[u8]) -> Option<Node<T>> {
         // if k has a prefix of p, then we're okay, otherwise we need
         // to split this path where the common prefix ends.
 
-        let prefixlen = common_prefix_len(k, p.key.as_slice());
-        if prefixlen < p.key.len() {
+        let prefix_len = common_prefix_len(k, p.key.as_slice());
+        if prefix_len < p.key.len() {
             // mutate path(child) to path(container(path(child)))
-            let head = p.key[..prefixlen].to_vec();
-            p.key = p.key[prefixlen..].to_vec();
+            let head = p.key[..prefix_len].to_vec();
+            p.key = p.key[prefix_len..].to_vec();
             let c = wrap_path_in_container(n);
             // its possible that there's no matching prefix at all.
             // In that case we can use the container we just built as the result
@@ -152,6 +153,12 @@ pub struct Tree<T> {
 impl<T: 'static> Default for Tree<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T: fmt::Debug + 'static> fmt::Debug for Tree<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_node(f, &self.root, 0)
     }
 }
 
@@ -268,6 +275,65 @@ impl<T: 'static> Tree<T> {
     }
 }
 
+fn write_node<T: std::fmt::Debug, W: fmt::Write>(
+    f: &mut W,
+    n: &Node<T>,
+    indent: i32,
+) -> fmt::Result {
+    match n {
+        Node::None => {
+            // nothing
+        }
+        Node::Leaf(t) => {
+            write!(f, "<leaf> {:?}\n", t)?;
+        }
+        Node::Path(p) => {
+            let path = format!("<path> {:?} : ", p.key);
+            f.write_str(&path)?;
+            write_node(f, &p.child, indent + 1 + (path.len() as i32))?;
+        }
+        Node::Container4(c) => {
+            write!(f, "<c4> : ")?;
+            if let Node::None = c.value {
+                f.write_char('\n')?;
+            } else {
+                write_node(f, &c.value, indent + 4)?;
+            }
+            let new_indent = indent + 2;
+            for i in 0..c.count {
+                write_indent(f, new_indent)?;
+                write!(f, "[{}]: ", c.keys[i])?;
+                write_node(f, &c.children[i], new_indent + 4)?;
+            }
+        }
+        Node::Container256(c) => {
+            write!(f, "<c256> : ")?;
+            if let Node::None = c.value {
+                f.write_char('\n')?;
+            } else {
+                write_node(f, &c.value, indent + 4)?;
+            }
+            let new_indent = indent + 4;
+            c.children
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| !matches!(c, Node::None))
+                .try_for_each(|(k, child)| -> fmt::Result {
+                    write_indent(f, new_indent)?;
+                    write!(f, "[{}]: ", k)?;
+                    write_node(f, child, new_indent + 4)
+                })?;
+        }
+    }
+    Ok(())
+}
+fn write_indent<W: fmt::Write>(f: &mut W, indent: i32) -> fmt::Result {
+    for _ in 0..indent {
+        f.write_char(' ')?;
+    }
+    Ok(())
+}
+
 fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
     let len = min(a.len(), b.len());
     for i in 0..len {
@@ -281,6 +347,7 @@ fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
 #[cfg(test)]
 mod test {
     use super::Tree;
+    use insta::assert_debug_snapshot;
 
     #[test]
     fn container4_only() {
@@ -300,6 +367,8 @@ mod test {
         assert_eq!(x.get(&[2, 10]), None);
         assert_eq!(x.get(&[2, 10, 11, 12]), None);
         assert_eq!(x.get(&[2, 10, 11, 12, 13, 14, 15]), None);
+
+        assert_debug_snapshot!(x);
     }
 
     #[test]
@@ -308,8 +377,21 @@ mod test {
         for i in 10..50 {
             x.put(&[1, 2, 3, i], i);
         }
+        x.put(&[1, 2, 3], 255);
         for i in 10..50 {
             assert_eq!(x.get(&[1, 2, 3, i]), Some(&i));
         }
+        assert_debug_snapshot!(x);
+    }
+
+    #[test]
+    fn debug_tree() {
+        let mut x = Tree::<usize>::new();
+        let k: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        for i in 1..k.len() {
+            x.put(&k[..i], i * 100);
+            x.put(&[1, 2, 3, i as u8, 4, 5, 6], i * 100);
+        }
+        assert_debug_snapshot!(x);
     }
 }
