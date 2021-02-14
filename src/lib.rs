@@ -507,4 +507,19 @@ mod test {
             assert_eq!(it.next(), Some(&i));
         }
     }
+
+    #[test]
+    fn tree_iter_depth() {
+        let mut x = Tree::<usize>::new();
+        let k = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        k.iter()
+            .enumerate()
+            .for_each(|(i, _)| x.put(&k[0..i], i + 10));
+
+        assert_debug_snapshot!(x);
+        let mut it = x.iter();
+        k.iter()
+            .enumerate()
+            .for_each(|(i, _)| assert_eq!(it.next(), Some(&(i + 10))));
+    }
 }

@@ -1,0 +1,22 @@
+---
+source: src/lib.rs
+expression: x
+
+---
+<c4> : <value> 10
+  [1]: <c4> : <value> 11
+        [2]: <c4> : <value> 12
+              [3]: <c4> : <value> 13
+                    [4]: <c4> : <value> 14
+                          [5]: <c4> : <value> 15
+                                [6]: <c4> : <value> 16
+                                      [7]: <c4> : <value> 17
+                                            [8]: <c4> : <value> 18
+                                                  [9]: <c4> : <value> 19
+                                                        [10]: <c4> : <value> 20
+                                                              [11]: <c4> : <value> 21
+                                                                    [12]: <c4> : <value> 22
+                                                                          [13]: <c4> : <value> 23
+                                                                                [14]: <c4> : <value> 24
+                                                                                      [15]: <leaf> 25
+
