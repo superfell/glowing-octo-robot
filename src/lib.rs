@@ -1,6 +1,6 @@
 use arr_macro::arr;
-use std::cmp::min;
 use std::fmt;
+use std::{cmp::min, mem};
 
 enum Node<T> {
     None,
@@ -33,9 +33,9 @@ fn wrap_path_in_container<T>(n: &mut Node<T>) -> Box<Container4<T>> {
         // path.key might be empty now, in which case we can put the path child directly
         // into the new container rather than the remaining path
         c.children[0] = if p.key.is_empty() {
-            std::mem::take(&mut p.child)
+            mem::take(&mut p.child)
         } else {
-            std::mem::take(n)
+            mem::take(n)
         };
         c
     } else {
@@ -102,16 +102,29 @@ impl<T> Container4<T> {
         &Node::None
     }
     fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
+        let mut insertion_point = self.count;
         for i in 0..self.count {
             if self.keys[i] == key {
                 return &mut self.children[i];
             }
+            if self.keys[i] > key {
+                insertion_point = i;
+                break;
+            }
         }
         assert!(self.count < 4, "container should of been grown already");
-        let idx = self.count;
-        self.keys[idx] = key;
+        // store key in order.
+        for idx in (insertion_point..self.count).rev() {
+            let mut k: u8 = 0;
+            let mut c = Node::None;
+            mem::swap(&mut k, &mut self.keys[idx]);
+            mem::swap(&mut k, &mut self.keys[idx + 1]);
+            mem::swap(&mut c, &mut self.children[idx]);
+            mem::swap(&mut c, &mut self.children[idx + 1]);
+        }
+        self.keys[insertion_point] = key;
         self.count += 1;
-        &mut self.children[idx]
+        &mut self.children[insertion_point]
     }
 }
 
@@ -202,7 +215,7 @@ impl<T> Tree<T> {
                 }
                 Node::Leaf(v) => {
                     let mut c = Box::new(Container4::new());
-                    std::mem::swap(v, &mut c.value);
+                    mem::swap(v, &mut c.value);
                     *n = Node::Container4(c);
                 }
                 Node::Container4(c) => {
@@ -495,6 +508,19 @@ mod test {
         assert_eq!(it.next(), Some((vec![2, 3], &3)));
         assert_eq!(it.next(), None);
         assert_debug_snapshot!(x);
+    }
+
+    #[test]
+    fn tree_iter_key_order() {
+        let mut x = Tree::new();
+        x.put(&[2, 2], 2);
+        x.put(&[2, 1], 1);
+        x.put(&[2, 3], 3);
+        let mut it = x.iter();
+        assert_eq!(it.next(), Some((vec![2, 1], &1)));
+        assert_eq!(it.next(), Some((vec![2, 2], &2)));
+        assert_eq!(it.next(), Some((vec![2, 3], &3)));
+        assert_eq!(it.next(), None);
     }
 
     #[test]
