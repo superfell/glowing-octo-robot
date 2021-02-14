@@ -472,6 +472,17 @@ mod test {
     }
 
     #[test]
+    fn update_existing_key() {
+        let mut x = Tree::new();
+        x.put(&[2], 2);
+        x.put(&[2], 4);
+        assert_eq!(x.get(&[2]), Some(&4));
+        let mut it = x.iter();
+        assert_eq!(it.next(), Some((vec![2], &4)));
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
     fn container4_grow_to_256() {
         let mut x = Tree::<u8>::new();
         for i in 10..50 {
