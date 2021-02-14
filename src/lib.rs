@@ -92,6 +92,37 @@ impl<T> Container4<T> {
         }
         matches!(self.get_child(key), Node::None)
     }
+    // returns a smaller node that is logically equivalent to this one
+    fn shrink_maybe(&mut self) -> Option<Node<T>> {
+        if self.count == 1 && self.value.is_none() {
+            let mut c = Node::None;
+            mem::swap(&mut c, &mut self.children[0]);
+            Some(Node::Path(Box::new(Path {
+                key: vec![self.keys[0]],
+                child: c,
+            })))
+        } else if self.count == 0 && self.value.is_some() {
+            let mut v = None;
+            mem::swap(&mut v, &mut self.value);
+            Some(Node::Leaf(v))
+        } else {
+            None
+        }
+    }
+    fn remove_child_at_index(&mut self, idx: usize) {
+        for i in idx..self.count {
+            let mut k = 0u8;
+            let mut t = Node::None;
+            if i != self.count - 1 {
+                mem::swap(&mut self.keys[i + 1], &mut k);
+                mem::swap(&mut self.children[i + 1], &mut t);
+            }
+            mem::swap(&mut self.keys[i], &mut k);
+            mem::swap(&mut self.children[i], &mut t);
+        }
+        self.count -= 1;
+    }
+
     fn get_child(&self, key: u8) -> &Node<T> {
         for i in 0..self.count {
             if self.keys[i] == key {
@@ -158,6 +189,32 @@ impl<T> Container256<T> {
         for i in start..256 {
             if !matches!(self.children[i], Node::None) {
                 return Some(i);
+            }
+        }
+        None
+    }
+
+    // returns a smaller node that is logically equivalent to this one
+    fn shrink_maybe(&mut self) -> Option<Node<T>> {
+        // TODO, this should just strink into a c4
+        match self.index_of_next(0, true) {
+            None => {
+                if self.value.is_some() {
+                    let mut v = None;
+                    mem::swap(&mut v, &mut self.value);
+                    return Some(Node::Leaf(v));
+                }
+            }
+            Some(k) => {
+                if self.value.is_none() && self.index_of_next(k, false).is_none() {
+                    // only one child, and its at k
+                    let mut c = Node::None;
+                    mem::swap(&mut c, &mut self.children[k]);
+                    return Some(Node::Path(Box::new(Path {
+                        key: vec![k as u8],
+                        child: c,
+                    })));
+                }
             }
         }
         None
@@ -254,59 +311,78 @@ impl<T> Tree<T> {
     }
 
     pub fn delete(&mut self, key: &[u8]) {
-        fn delete_one<T>(n: &mut Node<T>, key: &[u8]) -> bool {
+        fn delete_one<T>(n: &mut Node<T>, key: &[u8]) -> Option<Node<T>> {
             match n {
-                Node::None => false,
-                Node::Leaf(_) => key.is_empty(),
-                Node::Path(p) => {
-                    if key.starts_with(&p.key) {
-                        delete_one(&mut p.child, &key[p.key.len()..])
+                Node::None => None,
+                Node::Leaf(_) => {
+                    if key.is_empty() {
+                        Some(Node::None)
                     } else {
-                        false
+                        None
+                    }
+                }
+                Node::Path(p) => {
+                    if !key.starts_with(&p.key) {
+                        return None;
+                    }
+                    match delete_one(&mut p.child, &key[p.key.len()..]) {
+                        Some(new_child) => {
+                            if matches!(new_child, Node::None) {
+                                Some(Node::None)
+                            } else {
+                                // TODO if new_child is also a path we can coalesce the 2 paths into one.
+                                p.child = new_child;
+                                None
+                            }
+                        }
+                        None => None,
                     }
                 }
                 Node::Container4(c) => {
                     if key.is_empty() {
                         c.value = None;
-                        return c.count == 0;
+                        return c.shrink_maybe();
                     }
                     let child = c.get_child_slot(key[0], false);
                     match child {
-                        Some((next, idx)) => {
-                            if delete_one(next, &key[1..]) {
-                                for i in idx..c.count {
-                                    let mut k = 0u8;
-                                    let mut t = Node::None;
-                                    if i != c.count - 1 {
-                                        mem::swap(&mut c.keys[i + 1], &mut k);
-                                        mem::swap(&mut c.children[i + 1], &mut t);
-                                    }
-                                    mem::swap(&mut c.keys[i], &mut k);
-                                    mem::swap(&mut c.children[i], &mut t);
+                        Some((next, idx)) => match delete_one(next, &key[1..]) {
+                            Some(new_child) => {
+                                if matches!(new_child, Node::None) {
+                                    c.remove_child_at_index(idx);
+                                    return c.shrink_maybe();
+                                } else {
+                                    c.children[idx] = new_child;
                                 }
-                                c.count -= 1;
+                                None
                             }
-                            c.count == 0 && c.value.is_none()
-                        }
-                        None => false,
+                            None => None,
+                        },
+                        None => None,
                     }
                 }
                 Node::Container256(c) => {
                     if key.is_empty() {
                         c.value = None;
-                        return c.index_of_next(0, true).is_none();
+                        return c.shrink_maybe();
                     }
                     let i = key[0] as usize;
-                    if delete_one(&mut c.children[i], &key[1..]) {
-                        c.children[i] = Node::None;
-                        return c.value.is_none() && c.index_of_next(0, true).is_none();
+                    match delete_one(&mut c.children[i], &key[1..]) {
+                        Some(new_child) => {
+                            let is_none = matches!(new_child, Node::None);
+                            c.children[i] = new_child;
+                            if is_none {
+                                c.shrink_maybe()
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
                     }
-                    false
                 }
             }
         }
-        if delete_one(&mut self.root, key) {
-            self.root = Node::None;
+        if let Some(new_child) = delete_one(&mut self.root, key) {
+            self.root = new_child;
         }
     }
 
@@ -644,6 +720,28 @@ mod test {
 
         x.delete(&[1, 2, 4]);
         x.delete(&[1, 2, 5]);
+        if !matches!(x.root, super::Node::None) {
+            panic!("root should be None but isn't");
+        }
+    }
+
+    #[test]
+    fn delete_256() {
+        let mut x = Tree::new();
+        x.delete(&[1]);
+        for i in 10..20 {
+            x.put(&[i, 2, 3], 1);
+            x.put(&[i, 2, 4], 2);
+            x.put(&[i, i, 5], 3);
+        }
+        x.delete(&[15, 2, 3]);
+        assert_debug_snapshot!(x);
+        assert_eq!(x.iter().count(), 29);
+        for i in 10..20 {
+            x.delete(&[i, 2, 3]);
+            x.delete(&[i, 2, 4]);
+            x.delete(&[i, i, 5]);
+        }
         if !matches!(x.root, super::Node::None) {
             panic!("root should be None but isn't");
         }
