@@ -281,6 +281,7 @@ impl<T> Tree<T> {
         Iter {
             pos: vec![IterState {
                 n: &self.root,
+                key: vec![],
                 pos: 0,
                 check_value: true,
             }],
@@ -294,14 +295,16 @@ pub struct Iter<'a, T> {
 
 struct IterState<'a, T> {
     n: &'a Node<T>,
+    key: Vec<u8>,
     pos: usize,
     check_value: bool,
 }
 
 impl<'a, T> Iter<'a, T> {
-    fn push(&mut self, n: &'a Node<T>, pos: usize) {
+    fn push(&mut self, n: &'a Node<T>, key: Vec<u8>, pos: usize) {
         self.pos.push(IterState {
             n,
+            key,
             pos,
             check_value: false,
         });
@@ -309,53 +312,52 @@ impl<'a, T> Iter<'a, T> {
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
+    type Item = (Vec<u8>, &'a T);
     // the last item in pos is where we start to find the next
     // value to return
     fn next(&mut self) -> Option<Self::Item> {
         let mut s = self.pos.pop()?;
-        let mut n = s.n;
-        let mut check_value = s.check_value;
         loop {
-            match n {
+            match s.n {
                 Node::None => {
                     return None;
                 }
-                Node::Leaf(v) => {
-                    return v.as_ref();
-                }
+                Node::Leaf(v) => return Some((s.key, v.as_ref().unwrap())),
                 Node::Path(p) => {
-                    n = &p.child;
+                    s.n = &p.child;
+                    s.key.extend(p.key.iter());
                 }
                 Node::Container4(c) => {
-                    if check_value {
+                    if s.check_value {
                         if c.value.is_some() {
-                            self.push(n, 0);
-                            return c.value.as_ref();
+                            self.push(s.n, s.key.clone(), 0);
+                            return Some((s.key, c.value.as_ref().unwrap()));
                         }
                         s.pos = 0;
                     }
                     if c.count > s.pos + 1 {
-                        self.push(n, s.pos + 1);
+                        self.push(s.n, s.key.clone(), s.pos + 1);
                     }
-                    n = &c.children[s.pos];
+                    s.n = &c.children[s.pos];
+                    s.key.extend_from_slice(&[c.keys[s.pos]]);
                 }
                 Node::Container256(c) => {
-                    if check_value {
+                    if s.check_value {
                         // A container must have at least one child, so the unwrap is safe here
                         s.pos = c.index_of_next(0, true).unwrap();
                         if c.value.is_some() {
-                            self.push(n, s.pos);
-                            return c.value.as_ref();
+                            self.push(s.n, s.key.clone(), s.pos);
+                            return Some((s.key, c.value.as_ref().unwrap()));
                         }
                     }
                     if let Some(next) = c.index_of_next(s.pos, false) {
-                        self.push(n, next);
+                        self.push(s.n, s.key.clone(), next);
                     }
-                    n = &c.children[s.pos];
+                    s.n = &c.children[s.pos];
+                    s.key.extend_from_slice(&[s.pos as u8]);
                 }
             }
-            check_value = true;
+            s.check_value = true;
         }
     }
 }
@@ -487,9 +489,10 @@ mod test {
         x.put(&[1, 2, 3, 4], 2);
         x.put(&[2, 3], 3);
         let mut it = x.iter();
-        assert_eq!(it.next(), Some(&1));
-        assert_eq!(it.next(), Some(&2));
-        assert_eq!(it.next(), Some(&3));
+
+        assert_eq!(it.next(), Some((vec![1, 2, 3], &1)));
+        assert_eq!(it.next(), Some((vec![1, 2, 3, 4], &2)));
+        assert_eq!(it.next(), Some((vec![2, 3], &3)));
         assert_eq!(it.next(), None);
         assert_debug_snapshot!(x);
     }
@@ -503,9 +506,11 @@ mod test {
         x.put(&[1, 2, 255], 10);
         assert_debug_snapshot!(x);
         let mut it = x.iter();
-        for i in 0..11 {
-            assert_eq!(it.next(), Some(&i));
+        for i in 0..10 {
+            assert_eq!(it.next(), Some((vec![1, 2, i + 10], &(i as usize))));
         }
+        assert_eq!(it.next(), Some((vec![1, 2, 255], &10)));
+        assert_eq!(it.next(), None);
     }
 
     #[test]
@@ -520,6 +525,7 @@ mod test {
         let mut it = x.iter();
         k.iter()
             .enumerate()
-            .for_each(|(i, _)| assert_eq!(it.next(), Some(&(i + 10))));
+            .for_each(|(i, _)| assert_eq!(it.next(), Some((k[0..i].to_vec(), &(i + 10)))));
+        assert_eq!(it.next(), None);
     }
 }
