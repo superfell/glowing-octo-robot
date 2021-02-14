@@ -281,7 +281,8 @@ impl<T> Tree<T> {
         Iter {
             pos: vec![IterState {
                 n: &self.root,
-                p: ContainerPosn::Value,
+                pos: 0,
+                check_value: true,
             }],
         }
     }
@@ -291,21 +292,18 @@ pub struct Iter<'a, T> {
     pos: Vec<IterState<'a, T>>,
 }
 
-enum ContainerPosn {
-    Value,
-    Child(usize),
-}
-
 struct IterState<'a, T> {
     n: &'a Node<T>,
-    p: ContainerPosn,
+    pos: usize,
+    check_value: bool,
 }
 
 impl<'a, T> Iter<'a, T> {
-    fn push(&mut self, n: &'a Node<T>, posn: usize) {
+    fn push(&mut self, n: &'a Node<T>, pos: usize) {
         self.pos.push(IterState {
             n,
-            p: ContainerPosn::Child(posn),
+            pos,
+            check_value: false,
         });
     }
 }
@@ -317,6 +315,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut s = self.pos.pop()?;
         let mut n = s.n;
+        let mut check_value = s.check_value;
         loop {
             match n {
                 Node::None => {
@@ -329,46 +328,34 @@ impl<'a, T> Iterator for Iter<'a, T> {
                     n = &p.child;
                 }
                 Node::Container4(c) => {
-                    if let ContainerPosn::Value = s.p {
+                    if check_value {
                         if c.value.is_some() {
                             self.push(n, 0);
                             return c.value.as_ref();
                         }
-                        s.p = ContainerPosn::Child(0);
+                        s.pos = 0;
                     }
-                    if let ContainerPosn::Child(i) = s.p {
-                        if c.count > i + 1 {
-                            self.push(n, i + 1);
-                        }
-                        n = &c.children[i];
-                        // we need to reset s.c so that a child container is correctly processed.
-                        s.p = ContainerPosn::Value;
-                    } else {
-                        panic!()
+                    if c.count > s.pos + 1 {
+                        self.push(n, s.pos + 1);
                     }
+                    n = &c.children[s.pos];
                 }
                 Node::Container256(c) => {
-                    if let ContainerPosn::Value = s.p {
+                    if check_value {
                         // A container must have at least one child, so the unwrap is safe here
-                        let first_child = c.index_of_next(0, true).unwrap();
+                        s.pos = c.index_of_next(0, true).unwrap();
                         if c.value.is_some() {
-                            self.push(n, first_child);
+                            self.push(n, s.pos);
                             return c.value.as_ref();
                         }
-                        s.p = ContainerPosn::Child(first_child);
                     }
-                    if let ContainerPosn::Child(i) = s.p {
-                        if let Some(next) = c.index_of_next(i, false) {
-                            self.push(n, next);
-                        }
-                        n = &c.children[i];
-                        // we need to reset s.c so that a child container is correctly processed.
-                        s.p = ContainerPosn::Value;
-                    } else {
-                        panic!()
+                    if let Some(next) = c.index_of_next(s.pos, false) {
+                        self.push(n, next);
                     }
+                    n = &c.children[s.pos];
                 }
             }
+            check_value = true;
         }
     }
 }
