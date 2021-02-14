@@ -97,10 +97,21 @@ impl<T> Container4<T> {
         if self.count == 1 && self.value.is_none() {
             let mut c = Node::None;
             mem::swap(&mut c, &mut self.children[0]);
-            Some(Node::Path(Box::new(Path {
-                key: vec![self.keys[0]],
-                child: c,
-            })))
+            if let Node::Path(cp) = c {
+                // if the child is a path, we can coalesce the 2 together.
+                let mut new_key = vec![self.keys[0]];
+                new_key.extend_from_slice(&cp.key);
+                Some(Node::Path(Box::new(Path {
+                    key: new_key,
+                    child: cp.child,
+                })))
+            } else {
+                // otherwise we need to wrap it in a path to capture the child's key
+                Some(Node::Path(Box::new(Path {
+                    key: vec![self.keys[0]],
+                    child: c,
+                })))
+            }
         } else if self.count == 0 && self.value.is_some() {
             let mut v = None;
             mem::swap(&mut v, &mut self.value);
@@ -204,20 +215,31 @@ impl<T> Container256<T> {
                     mem::swap(&mut v, &mut self.value);
                     return Some(Node::Leaf(v));
                 }
+                None
             }
             Some(k) => {
                 if self.value.is_none() && self.index_of_next(k, false).is_none() {
                     // only one child, and its at k
                     let mut c = Node::None;
                     mem::swap(&mut c, &mut self.children[k]);
-                    return Some(Node::Path(Box::new(Path {
-                        key: vec![k as u8],
-                        child: c,
-                    })));
+                    return if let Node::Path(cp) = c {
+                        // if the child is a path, we can coalesce the 2 together.
+                        let mut new_key = vec![k as u8];
+                        new_key.extend_from_slice(&cp.key);
+                        Some(Node::Path(Box::new(Path {
+                            key: new_key,
+                            child: cp.child,
+                        })))
+                    } else {
+                        Some(Node::Path(Box::new(Path {
+                            key: vec![k as u8],
+                            child: c,
+                        })))
+                    };
                 }
+                None
             }
         }
-        None
     }
 }
 
@@ -330,8 +352,13 @@ impl<T> Tree<T> {
                             if matches!(new_child, Node::None) {
                                 Some(Node::None)
                             } else {
-                                // TODO if new_child is also a path we can coalesce the 2 paths into one.
-                                p.child = new_child;
+                                if let Node::Path(child_path) = new_child {
+                                    // if the child is a path, we can fold the 2 paths into one.
+                                    p.key.extend(child_path.key.iter());
+                                    p.child = child_path.child;
+                                } else {
+                                    p.child = new_child;
+                                }
                                 None
                             }
                         }
@@ -799,5 +826,19 @@ mod test {
         if !matches!(x.root, Node::None) {
             panic!("root should be None but isn't");
         }
+    }
+
+    #[test]
+    fn test_path_coalesce() {
+        let mut x = Tree::<usize>::new();
+        x.put(&[1, 2, 3], 1);
+        x.put(&[1, 2, 3, 4, 5, 6], 2);
+        assert_debug_snapshot!(x, @r###"
+        <path> [1, 2, 3] : <c4> : <value> 1
+                              [4]: <path> [5, 6] : <leaf> 2
+        "###);
+        x.delete(&[1, 2, 3]);
+        assert_debug_snapshot!(x, @"<path> [1, 2, 3, 4, 5, 6] : <leaf> 2
+");
     }
 }
