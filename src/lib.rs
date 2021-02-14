@@ -86,6 +86,23 @@ impl<T> Container4<T> {
             value: None,
         }
     }
+    fn new_from_c256(src: &mut Container256<T>) -> Container4<T> {
+        let mut n = Self::new();
+        std::mem::swap(&mut src.value, &mut n.value);
+        let keys: Vec<u8> = src
+            .children
+            .iter()
+            .enumerate()
+            .filter(|(_, cn)| !matches!(cn, Node::None))
+            .map(|(i, _)| i as u8)
+            .collect();
+        keys.into_iter().for_each(|k| {
+            n.keys[n.count] = k;
+            std::mem::swap(&mut n.children[n.count], &mut src.children[k as usize]);
+            n.count += 1;
+        });
+        n
+    }
     fn should_grow(&self, key: u8) -> bool {
         if self.count < 4 {
             return false;
@@ -207,38 +224,17 @@ impl<T> Container256<T> {
 
     // returns a smaller node that is logically equivalent to this one
     fn shrink_maybe(&mut self) -> Option<Node<T>> {
-        // TODO, this should just shrink into a c4
-        match self.index_of_next(0, true) {
-            None => {
-                if self.value.is_some() {
-                    let mut v = None;
-                    mem::swap(&mut v, &mut self.value);
-                    return Some(Node::Leaf(v));
-                }
-                None
-            }
-            Some(k) => {
-                if self.value.is_none() && self.index_of_next(k, false).is_none() {
-                    // only one child, and its at k
-                    let mut c = Node::None;
-                    mem::swap(&mut c, &mut self.children[k]);
-                    return if let Node::Path(cp) = c {
-                        // if the child is a path, we can coalesce the 2 together.
-                        let mut new_key = vec![k as u8];
-                        new_key.extend_from_slice(&cp.key);
-                        Some(Node::Path(Box::new(Path {
-                            key: new_key,
-                            child: cp.child,
-                        })))
-                    } else {
-                        Some(Node::Path(Box::new(Path {
-                            key: vec![k as u8],
-                            child: c,
-                        })))
-                    };
-                }
-                None
-            }
+        let is_small = self
+            .children
+            .iter()
+            .filter(|n| !matches!(n, Node::None))
+            .skip(3)
+            .next()
+            .is_none();
+        if is_small {
+            Some(Node::Container4(Box::new(Container4::new_from_c256(self))))
+        } else {
+            None
         }
     }
 }
@@ -839,6 +835,32 @@ mod test {
         "###);
         x.delete(&[1, 2, 3]);
         assert_debug_snapshot!(x, @"<path> [1, 2, 3, 4, 5, 6] : <leaf> 2
+");
+    }
+
+    #[test]
+    fn test_c256_to_c4() {
+        let mut x = Tree::new();
+        x.put(&[], 42);
+        for i in 10..20 {
+            x.put(&[i], 100 + i);
+            assert_eq!(x.get(&[i]), Some(&(100 + i)));
+        }
+        for i in 10..18 {
+            x.delete(&[i])
+        }
+        assert_debug_snapshot!(x, @r###"
+        <c4> : <value> 42
+          [18]: <leaf> 118
+          [19]: <leaf> 119
+        "###);
+        x.delete(&[18]);
+        assert_debug_snapshot!(x, @r###"
+        <c4> : <value> 42
+          [19]: <leaf> 119
+        "###);
+        x.delete(&[19]);
+        assert_debug_snapshot!(x, @"<leaf> 42
 ");
     }
 }
