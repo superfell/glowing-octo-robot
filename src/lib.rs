@@ -140,19 +140,19 @@ pub struct Tree<T> {
     root: Node<T>,
 }
 
-impl<T: 'static> Default for Tree<T> {
+impl<T> Default for Tree<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: fmt::Debug + 'static> fmt::Debug for Tree<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: fmt::Debug> fmt::Debug for Tree<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write_node(f, &self.root, 0)
     }
 }
 
-impl<T: 'static> Tree<T> {
+impl<T> Tree<T> {
     pub fn new() -> Self {
         Self { root: Node::None }
     }
@@ -316,6 +316,7 @@ fn write_node<T: std::fmt::Debug, W: fmt::Write>(
     }
     Ok(())
 }
+
 fn write_indent<W: fmt::Write>(f: &mut W, indent: i32) -> fmt::Result {
     for _ in 0..indent {
         f.write_char(' ')?;
