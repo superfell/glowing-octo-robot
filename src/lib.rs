@@ -263,6 +263,78 @@ impl<T> Tree<T> {
             };
         }
     }
+
+    pub fn iter(&self) -> Iter<T> {
+        Iter {
+            pos: vec![IterState {
+                n: &self.root,
+                c: ContainerPosn::Value,
+            }],
+        }
+    }
+}
+
+pub struct Iter<'a, T> {
+    pos: Vec<IterState<'a, T>>,
+}
+
+enum ContainerPosn {
+    Value,
+    Child(u8),
+}
+
+struct IterState<'a, T> {
+    n: &'a Node<T>,
+    c: ContainerPosn,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+    // the last item in pos is where we start to find the next
+    // value to return
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut s = self.pos.pop()?;
+        let mut n = s.n;
+        loop {
+            match n {
+                Node::None => {
+                    return None;
+                }
+                Node::Leaf(v) => {
+                    return v.as_ref();
+                }
+                Node::Path(p) => {
+                    n = &p.child;
+                }
+                Node::Container4(c) => {
+                    if let ContainerPosn::Value = s.c {
+                        if c.value.is_some() {
+                            self.pos.push(IterState {
+                                n,
+                                c: ContainerPosn::Child(0),
+                            });
+                            return c.value.as_ref();
+                        }
+                        s.c = ContainerPosn::Child(0);
+                    }
+                    if let ContainerPosn::Child(i) = s.c {
+                        if c.count > (i + 1) as usize {
+                            self.pos.push(IterState {
+                                n,
+                                c: ContainerPosn::Child(i + 1),
+                            });
+                        }
+                        n = &c.children[i as usize];
+                        // we need to reset s.c so that a child container is correctly processed.
+                        s.c = ContainerPosn::Value;
+                    } else {
+                        panic!()
+                    }
+                }
+                _ => panic!(),
+            }
+        }
+    }
 }
 
 fn write_node<T: std::fmt::Debug, W: fmt::Write>(
@@ -382,6 +454,20 @@ mod test {
             x.put(&k[..i], i * 100);
             x.put(&[1, 2, 3, i as u8, 4, 5, 6], i * 100);
         }
+        assert_debug_snapshot!(x);
+    }
+
+    #[test]
+    fn tree_iter() {
+        let mut x = Tree::<usize>::new();
+        x.put(&[1, 2, 3], 1);
+        x.put(&[1, 2, 3, 4], 2);
+        x.put(&[2, 3], 3);
+        let mut it = x.iter();
+        assert_eq!(it.next(), Some(&1));
+        assert_eq!(it.next(), Some(&2));
+        assert_eq!(it.next(), Some(&3));
+        assert_eq!(it.next(), None);
         assert_debug_snapshot!(x);
     }
 }

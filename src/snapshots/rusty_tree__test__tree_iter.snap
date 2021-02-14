@@ -1,0 +1,10 @@
+---
+source: src/lib.rs
+expression: x
+
+---
+<c4> : 
+  [1]: <path> [2, 3] : <c4> : <value> 1
+                         [4]: <leaf> 2
+  [2]: <path> [3] : <leaf> 3
+
