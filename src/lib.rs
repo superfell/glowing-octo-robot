@@ -196,7 +196,7 @@ impl<T> Container256<T> {
 
     // returns a smaller node that is logically equivalent to this one
     fn shrink_maybe(&mut self) -> Option<Node<T>> {
-        // TODO, this should just strink into a c4
+        // TODO, this should just shrink into a c4
         match self.index_of_next(0, true) {
             None => {
                 if self.value.is_some() {
@@ -427,6 +427,41 @@ impl<T> Tree<T> {
         }
     }
 
+    pub fn sizes(&self) -> Sizes {
+        let mut s = Sizes::default();
+        fn w<T>(s: &mut Sizes, n: &Node<T>) {
+            match n {
+                Node::None => {}
+                Node::Leaf(_) => {
+                    s.leaf += 1;
+                    s.value += 1;
+                }
+                Node::Path(p) => {
+                    s.path += 1;
+                    w(s, &p.child);
+                }
+                Node::Container4(c) => {
+                    s.c4 += 1;
+                    if c.value.is_some() {
+                        s.value += 1;
+                    }
+                    for i in 0..c.count {
+                        w(s, &c.children[i]);
+                    }
+                }
+                Node::Container256(c) => {
+                    s.c256 += 1;
+                    if c.value.is_some() {
+                        s.value += 1;
+                    }
+                    c.children.iter().for_each(|x| w(s, x));
+                }
+            }
+        };
+        w(&mut s, &self.root);
+        s
+    }
+
     pub fn iter(&self) -> Iter<T> {
         Iter {
             pos: vec![IterState {
@@ -437,6 +472,15 @@ impl<T> Tree<T> {
             }],
         }
     }
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct Sizes {
+    leaf: usize,
+    path: usize,
+    c4: usize,
+    c256: usize,
+    value: usize,
 }
 
 pub struct Iter<'a, T> {
@@ -583,7 +627,7 @@ fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
 
 #[cfg(test)]
 mod test {
-    use super::Tree;
+    use super::*;
     use insta::assert_debug_snapshot;
 
     #[test]
@@ -720,7 +764,7 @@ mod test {
 
         x.delete(&[1, 2, 4]);
         x.delete(&[1, 2, 5]);
-        if !matches!(x.root, super::Node::None) {
+        if !matches!(x.root, Node::None) {
             panic!("root should be None but isn't");
         }
     }
@@ -735,6 +779,16 @@ mod test {
             x.put(&[i, i, 5], 3);
         }
         x.delete(&[15, 2, 3]);
+        assert_eq!(
+            Sizes {
+                path: 11,
+                leaf: 29,
+                value: 29,
+                c256: 1,
+                c4: 19,
+            },
+            x.sizes()
+        );
         assert_debug_snapshot!(x);
         assert_eq!(x.iter().count(), 29);
         for i in 10..20 {
@@ -742,7 +796,7 @@ mod test {
             x.delete(&[i, 2, 4]);
             x.delete(&[i, i, 5]);
         }
-        if !matches!(x.root, super::Node::None) {
+        if !matches!(x.root, Node::None) {
             panic!("root should be None but isn't");
         }
     }
