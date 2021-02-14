@@ -89,18 +89,14 @@ impl<T> Container4<T> {
     fn new_from_c256(src: &mut Container256<T>) -> Container4<T> {
         let mut n = Self::new();
         std::mem::swap(&mut src.value, &mut n.value);
-        let keys: Vec<u8> = src
-            .children
-            .iter()
-            .enumerate()
-            .filter(|(_, cn)| !matches!(cn, Node::None))
-            .map(|(i, _)| i as u8)
-            .collect();
-        keys.into_iter().for_each(|k| {
-            n.keys[n.count] = k;
-            std::mem::swap(&mut n.children[n.count], &mut src.children[k as usize]);
+        for k in 0..256 {
+            if matches!(src.children[k], Node::None) {
+                continue;
+            }
+            n.keys[n.count] = k as u8;
+            std::mem::swap(&mut n.children[n.count], &mut src.children[k]);
             n.count += 1;
-        });
+        }
         n
     }
     fn should_grow(&self, key: u8) -> bool {
@@ -228,8 +224,7 @@ impl<T> Container256<T> {
             .children
             .iter()
             .filter(|n| !matches!(n, Node::None))
-            .skip(3)
-            .next()
+            .nth(3)
             .is_none();
         if is_small {
             Some(Node::Container4(Box::new(Container4::new_from_c256(self))))
