@@ -1,0 +1,18 @@
+---
+source: src/lib.rs
+expression: x
+
+---
+<path> [1, 2] : <c256> : 
+                     [10]: <leaf> 0
+                     [11]: <leaf> 1
+                     [12]: <leaf> 2
+                     [13]: <leaf> 3
+                     [14]: <leaf> 4
+                     [15]: <leaf> 5
+                     [16]: <leaf> 6
+                     [17]: <leaf> 7
+                     [18]: <leaf> 8
+                     [19]: <leaf> 9
+                     [255]: <leaf> 10
+

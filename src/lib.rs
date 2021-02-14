@@ -134,6 +134,19 @@ impl<T> Container256<T> {
         }
         n
     }
+
+    // index_of_next returns the index (aka key) of the next populated child
+    // after k, or returns None if we've run off the end.
+    fn index_of_next(&self, k: usize, include_k: bool) -> Option<usize> {
+        assert!(k < 256);
+        let start = if include_k { k } else { k + 1 };
+        for i in start..256 {
+            if !matches!(self.children[i], Node::None) {
+                return Some(i);
+            }
+        }
+        None
+    }
 }
 
 pub struct Tree<T> {
@@ -268,7 +281,7 @@ impl<T> Tree<T> {
         Iter {
             pos: vec![IterState {
                 n: &self.root,
-                c: ContainerPosn::Value,
+                p: ContainerPosn::Value,
             }],
         }
     }
@@ -280,19 +293,19 @@ pub struct Iter<'a, T> {
 
 enum ContainerPosn {
     Value,
-    Child(u8),
+    Child(usize),
 }
 
 struct IterState<'a, T> {
     n: &'a Node<T>,
-    c: ContainerPosn,
+    p: ContainerPosn,
 }
 
 impl<'a, T> Iter<'a, T> {
-    fn push(&mut self, n: &'a Node<T>, posn: u8) {
+    fn push(&mut self, n: &'a Node<T>, posn: usize) {
         self.pos.push(IterState {
             n,
-            c: ContainerPosn::Child(posn),
+            p: ContainerPosn::Child(posn),
         });
     }
 }
@@ -316,25 +329,45 @@ impl<'a, T> Iterator for Iter<'a, T> {
                     n = &p.child;
                 }
                 Node::Container4(c) => {
-                    if let ContainerPosn::Value = s.c {
+                    if let ContainerPosn::Value = s.p {
                         if c.value.is_some() {
                             self.push(n, 0);
                             return c.value.as_ref();
                         }
-                        s.c = ContainerPosn::Child(0);
+                        s.p = ContainerPosn::Child(0);
                     }
-                    if let ContainerPosn::Child(i) = s.c {
-                        if c.count > (i + 1) as usize {
+                    if let ContainerPosn::Child(i) = s.p {
+                        if c.count > i + 1 {
                             self.push(n, i + 1);
                         }
-                        n = &c.children[i as usize];
+                        n = &c.children[i];
                         // we need to reset s.c so that a child container is correctly processed.
-                        s.c = ContainerPosn::Value;
+                        s.p = ContainerPosn::Value;
                     } else {
                         panic!()
                     }
                 }
-                _ => panic!(),
+                Node::Container256(c) => {
+                    if let ContainerPosn::Value = s.p {
+                        // A container must have at least one child, so the unwrap is safe here
+                        let first_child = c.index_of_next(0, true).unwrap();
+                        if c.value.is_some() {
+                            self.push(n, first_child);
+                            return c.value.as_ref();
+                        }
+                        s.p = ContainerPosn::Child(first_child);
+                    }
+                    if let ContainerPosn::Child(i) = s.p {
+                        if let Some(next) = c.index_of_next(i, false) {
+                            self.push(n, next);
+                        }
+                        n = &c.children[i];
+                        // we need to reset s.c so that a child container is correctly processed.
+                        s.p = ContainerPosn::Value;
+                    } else {
+                        panic!()
+                    }
+                }
             }
         }
     }
@@ -472,5 +505,19 @@ mod test {
         assert_eq!(it.next(), Some(&3));
         assert_eq!(it.next(), None);
         assert_debug_snapshot!(x);
+    }
+
+    #[test]
+    fn tree_iter_256() {
+        let mut x = Tree::<usize>::new();
+        for i in 0..10 {
+            x.put(&[1, 2, i + 10], i as usize);
+        }
+        x.put(&[1, 2, 255], 10);
+        assert_debug_snapshot!(x);
+        let mut it = x.iter();
+        for i in 0..11 {
+            assert_eq!(it.next(), Some(&i));
+        }
     }
 }
