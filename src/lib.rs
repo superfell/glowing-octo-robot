@@ -1,6 +1,5 @@
 use arr_macro::arr;
-use std::fmt;
-use std::{cmp::min, mem};
+use std::{cmp::min, fmt, mem};
 
 enum Node<T> {
     None,
@@ -101,16 +100,19 @@ impl<T> Container4<T> {
         }
         &Node::None
     }
-    fn get_child_slot(&mut self, key: u8) -> &mut Node<T> {
+    fn get_child_slot(&mut self, key: u8, create: bool) -> Option<(&mut Node<T>, usize)> {
         let mut insertion_point = self.count;
         for i in 0..self.count {
             if self.keys[i] == key {
-                return &mut self.children[i];
+                return Some((&mut self.children[i], i));
             }
             if self.keys[i] > key {
                 insertion_point = i;
                 break;
             }
+        }
+        if !create {
+            return None;
         }
         assert!(self.count < 4, "container should of been grown already");
         // store key in order.
@@ -124,7 +126,7 @@ impl<T> Container4<T> {
         }
         self.keys[insertion_point] = key;
         self.count += 1;
-        &mut self.children[insertion_point]
+        Some((&mut self.children[insertion_point], insertion_point))
     }
 }
 
@@ -219,7 +221,9 @@ impl<T> Tree<T> {
                     *n = Node::Container4(c);
                 }
                 Node::Container4(c) => {
-                    n = c.get_child_slot(k[0]);
+                    // can't return None unless it wasn't grown when it should of been.
+                    let child = c.get_child_slot(k[0], true).unwrap();
+                    n = child.0;
                     k = &k[1..]
                 }
                 Node::Container256(c) => {
@@ -246,6 +250,63 @@ impl<T> Tree<T> {
             Node::Container256(c) => {
                 c.value = Some(value);
             }
+        }
+    }
+
+    pub fn delete(&mut self, key: &[u8]) {
+        fn delete_one<T>(n: &mut Node<T>, key: &[u8]) -> bool {
+            match n {
+                Node::None => false,
+                Node::Leaf(_) => key.is_empty(),
+                Node::Path(p) => {
+                    if key.starts_with(&p.key) {
+                        delete_one(&mut p.child, &key[p.key.len()..])
+                    } else {
+                        false
+                    }
+                }
+                Node::Container4(c) => {
+                    if key.is_empty() {
+                        c.value = None;
+                        return c.count == 0;
+                    }
+                    let child = c.get_child_slot(key[0], false);
+                    match child {
+                        Some((next, idx)) => {
+                            if delete_one(next, &key[1..]) {
+                                for i in idx..c.count {
+                                    let mut k = 0u8;
+                                    let mut t = Node::None;
+                                    if i != c.count - 1 {
+                                        mem::swap(&mut c.keys[i + 1], &mut k);
+                                        mem::swap(&mut c.children[i + 1], &mut t);
+                                    }
+                                    mem::swap(&mut c.keys[i], &mut k);
+                                    mem::swap(&mut c.children[i], &mut t);
+                                }
+                                c.count -= 1;
+                            }
+                            c.count == 0 && c.value.is_none()
+                        }
+                        None => false,
+                    }
+                }
+                Node::Container256(c) => {
+                    if key.is_empty() {
+                        c.value = None;
+                        return c.index_of_next(0, true).is_none();
+                    }
+                    let i = key[0] as usize;
+                    if delete_one(&mut c.children[i], &key[1..]) {
+                        c.children[i] = Node::None;
+                        return c.value.is_none() && c.index_of_next(0, true).is_none();
+                    }
+                    false
+                }
+            }
+        }
+        if delete_one(&mut self.root, key) {
+            self.root = Node::None;
         }
     }
 
@@ -564,5 +625,27 @@ mod test {
             .enumerate()
             .for_each(|(i, _)| assert_eq!(it.next(), Some((k[0..i].to_vec(), &(i + 10)))));
         assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn delete() {
+        let mut x = Tree::new();
+        x.delete(&[1]);
+        x.put(&[1, 2, 3], 1);
+        x.put(&[1, 2, 4], 2);
+        x.put(&[1, 2, 5], 3);
+        x.delete(&[1]);
+        x.delete(&[1, 2, 3]);
+        assert_debug_snapshot!(x);
+        let mut it = x.iter();
+        assert_eq!(it.next(), Some((vec![1, 2, 4], &2)));
+        assert_eq!(it.next(), Some((vec![1, 2, 5], &3)));
+        assert_eq!(it.next(), None);
+
+        x.delete(&[1, 2, 4]);
+        x.delete(&[1, 2, 5]);
+        if !matches!(x.root, super::Node::None) {
+            panic!("root should be None but isn't");
+        }
     }
 }
