@@ -288,6 +288,15 @@ struct IterState<'a, T> {
     c: ContainerPosn,
 }
 
+impl<'a, T> Iter<'a, T> {
+    fn push(&mut self, n: &'a Node<T>, posn: u8) {
+        self.pos.push(IterState {
+            n,
+            c: ContainerPosn::Child(posn),
+        });
+    }
+}
+
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;
     // the last item in pos is where we start to find the next
@@ -309,20 +318,14 @@ impl<'a, T> Iterator for Iter<'a, T> {
                 Node::Container4(c) => {
                     if let ContainerPosn::Value = s.c {
                         if c.value.is_some() {
-                            self.pos.push(IterState {
-                                n,
-                                c: ContainerPosn::Child(0),
-                            });
+                            self.push(n, 0);
                             return c.value.as_ref();
                         }
                         s.c = ContainerPosn::Child(0);
                     }
                     if let ContainerPosn::Child(i) = s.c {
                         if c.count > (i + 1) as usize {
-                            self.pos.push(IterState {
-                                n,
-                                c: ContainerPosn::Child(i + 1),
-                            });
+                            self.push(n, i + 1);
                         }
                         n = &c.children[i as usize];
                         // we need to reset s.c so that a child container is correctly processed.
