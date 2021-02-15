@@ -340,17 +340,18 @@ impl<T> Tree<T> {
                     }
                     match delete_one(&mut p.child, &key[p.key.len()..]) {
                         Some(new_child) => {
-                            if matches!(new_child, Node::None) {
-                                Some(Node::None)
-                            } else {
-                                if let Node::Path(child_path) = new_child {
+                            match new_child {
+                                Node::None => Some(Node::None),
+                                Node::Path(child_path) => {
                                     // if the child is a path, we can fold the 2 paths into one.
                                     p.key.extend(child_path.key.iter());
                                     p.child = child_path.child;
-                                } else {
-                                    p.child = new_child;
+                                    None
                                 }
-                                None
+                                _ => {
+                                    p.child = new_child;
+                                    None
+                                }
                             }
                         }
                         None => None,
